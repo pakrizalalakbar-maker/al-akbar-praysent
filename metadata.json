@@ -1,0 +1,9 @@
+{
+  "name": "Al-Akbar Praysent",
+  "description": "Aplikasi presensi shalat siswa berbasis QR Code dengan fitur impor data, ekspor laporan (PDF/XLS), dan analisis kehadiran berbasis AI.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
