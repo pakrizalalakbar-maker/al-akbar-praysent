@@ -41,9 +41,15 @@ seperti menjalankan `schema.sql` di awal) supaya tabel jadwal ibadah tersedia.
 Kalau tabel ini belum ada, mode Otomatis tetap jalan pakai jadwal bawaan (default),
 tapi pengaturan lewat ikon ⚙ tidak akan tersimpan sampai migrasi dijalankan.
 
+## Update: Sensitivitas Kamera & Pop-up Diperkecil
+
+- Scanner sekarang pakai fitur deteksi barcode bawaan browser (kalau didukung) yang jauh lebih cepat & sensitif dibanding sebelumnya, plus kotak bidik diperbesar supaya lebih toleran terhadap jarak/sudut kamera.
+- Kalau perangkat mendukung, muncul **slider zoom** di bawah tampilan kamera — bisa dipakai untuk "mendekatkan" tampilan tanpa harus geser jarak fisik ke barcode.
+- Pop-up notifikasi hasil scan sekarang jadi **badge kecil** di tengah atas layar, bukan banner selebar layar seperti sebelumnya.
+
 ---
 
-## Langkah Setup (sekali saja)
+
 
 ### 1. Buat akun & project Supabase (gratis)
 1. Buka https://supabase.com → daftar/login → **New project**.

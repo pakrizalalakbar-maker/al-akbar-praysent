@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Student, AttendanceRecord, PrayerType, PrayerScheduleItem, PRAYER_TYPES } from '../types';
 import { StorageService } from '../services/storage';
-import { QrCode, CheckCircle2, XCircle, Camera, Settings, X, Loader2, Clock } from 'lucide-react';
+import { QrCode, CheckCircle2, XCircle, Camera, Settings, X, Loader2, Clock, ZoomIn } from 'lucide-react';
 
 interface ScannerProps {
   students: Student[];
@@ -50,6 +50,8 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
+  const [zoomValue, setZoomValue] = useState<number | null>(null);
 
   // Muat jadwal dari database (kalau ada), jam berjalan tiap 15 detik
   useEffect(() => {
@@ -74,7 +76,7 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
   const showToast = useCallback((t: NonNullable<ToastState>) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(t);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+    toastTimerRef.current = setTimeout(() => setToast(null), 1000);
   }, []);
 
   const stopScanner = useCallback(async () => {
@@ -88,6 +90,8 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
       scannerRef.current = null;
     }
     setIsScanning(false);
+    setZoomCaps(null);
+    setZoomValue(null);
   }, []);
 
   const handleScanSuccess = useCallback(
@@ -143,21 +147,65 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
   );
 
   const startScanner = useCallback(async () => {
-    const html5Qrcode = new Html5Qrcode(READER_ID);
+    const html5Qrcode = new Html5Qrcode(READER_ID, {
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      verbose: false,
+    });
     scannerRef.current = html5Qrcode;
     try {
       await html5Qrcode.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        {
+          fps: 15,
+          // Kotak bidik lebih besar (80% dari sisi terkecil layar) supaya lebih mudah
+          // diarahkan dan lebih toleran terhadap jarak/sudut kamera yang tidak pas.
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const size = Math.floor(minEdge * 0.8);
+            return { width: size, height: size };
+          },
+          aspectRatio: 1,
+          disableFlip: false,
+          // Pakai Barcode Detection API bawaan browser kalau tersedia (jauh lebih cepat
+          // & lebih sensitif dibanding decoder JS biasa). Otomatis fallback kalau browser
+          // tidak mendukung (misal Safari lama).
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        },
         handleScanSuccess,
         () => {}
       );
       setIsScanning(true);
+
+      // Cek dukungan zoom kamera, tampilkan slider kalau tersedia
+      try {
+        const capabilities = html5Qrcode.getRunningTrackCameraCapabilities();
+        const zoomCap = (capabilities as any)?.zoomFeature?.();
+        if (zoomCap && zoomCap.isSupported && zoomCap.isSupported()) {
+          const min = zoomCap.min();
+          const max = zoomCap.max();
+          const step = zoomCap.step() || 0.1;
+          setZoomCaps({ min, max, step });
+          setZoomValue(zoomCap.value());
+        }
+      } catch {
+        // kamera/browser tidak mendukung kontrol zoom, tidak masalah
+      }
     } catch (err) {
       console.error(err);
       showToast({ type: 'error', message: 'Tidak bisa mengakses kamera. Cek izin kamera.' });
     }
   }, [handleScanSuccess, showToast]);
+
+  const handleZoomChange = (value: number) => {
+    setZoomValue(value);
+    try {
+      const capabilities = scannerRef.current?.getRunningTrackCameraCapabilities();
+      const zoomCap = (capabilities as any)?.zoomFeature?.();
+      zoomCap?.apply(value);
+    } catch {
+      // abaikan kalau gagal
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -262,6 +310,22 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
         <div id={READER_ID} className="w-full aspect-square bg-gray-900 rounded-xl overflow-hidden" />
 
+        {zoomCaps && zoomValue !== null && (
+          <div className="mt-3 flex items-center gap-3">
+            <ZoomIn size={16} className="text-gray-400 shrink-0" />
+            <input
+              type="range"
+              min={zoomCaps.min}
+              max={zoomCaps.max}
+              step={zoomCaps.step}
+              value={zoomValue}
+              onChange={e => handleZoomChange(Number(e.target.value))}
+              className="w-full accent-emerald-600"
+            />
+            <span className="text-xs text-gray-500 w-10 text-right">{zoomValue.toFixed(1)}x</span>
+          </div>
+        )}
+
         <div className="mt-4">
           {!isScanning ? (
             <button
@@ -285,14 +349,18 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
 
       {/* POP-UP NOTIFIKASI SEKILAS */}
       {toast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 w-full max-w-sm animate-in fade-in slide-in-from-top-4">
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-50 flex justify-center px-4 w-full max-w-md animate-in fade-in slide-in-from-top-4">
           <div
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-white font-medium text-sm ${
+            className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-xl text-white font-semibold ${
               toast.type === 'success' ? 'bg-emerald-600' : toast.type === 'duplicate' ? 'bg-amber-500' : 'bg-red-600'
             }`}
           >
-            {toast.type === 'success' ? <CheckCircle2 size={20} className="shrink-0" /> : <XCircle size={20} className="shrink-0" />}
-            <p>{toast.message}</p>
+            {toast.type === 'success' ? (
+              <CheckCircle2 size={26} className="shrink-0" />
+            ) : (
+              <XCircle size={26} className="shrink-0" />
+            )}
+            <span className="text-base leading-snug">{toast.message}</span>
           </div>
         </div>
       )}
