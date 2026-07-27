@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import { Student, AttendanceRecord, PrayerType } from '../types';
+import { Student, AttendanceRecord, PrayerType, PrayerScheduleItem } from '../types';
 
 // StorageService: pengganti localStorage lama.
 // Semua data sekarang disimpan di Supabase (Postgres) sehingga bisa
@@ -121,6 +121,25 @@ export const StorageService = {
 
   async deleteRecord(recordId: string): Promise<void> {
     const { error } = await supabase.from('attendance_records').delete().eq('id', recordId);
+    if (error) throw error;
+  },
+
+  // ---------- JADWAL OTOMATIS ----------
+  async getPrayerSchedule(): Promise<PrayerScheduleItem[]> {
+    const { data, error } = await supabase.from('prayer_schedule').select('*');
+    if (error) throw error;
+    return (data ?? []).map((row: any) => ({
+      prayer: row.prayer,
+      startTime: String(row.start_time).slice(0, 5),
+      endTime: String(row.end_time).slice(0, 5),
+    }));
+  },
+
+  async savePrayerSchedule(items: PrayerScheduleItem[]): Promise<void> {
+    const { error } = await supabase.from('prayer_schedule').upsert(
+      items.map(i => ({ prayer: i.prayer, start_time: i.startTime, end_time: i.endTime })),
+      { onConflict: 'prayer' }
+    );
     if (error) throw error;
   },
 };

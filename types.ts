@@ -41,3 +41,10 @@ export interface AppUser {
   fullName: string;
   role: 'admin' | 'guru';
 }
+
+// Jadwal jam ibadah untuk mode deteksi otomatis di Scanner
+export interface PrayerScheduleItem {
+  prayer: PrayerType;
+  startTime: string; // format "HH:mm"
+  endTime: string;   // format "HH:mm"
+}

@@ -10,11 +10,36 @@ Laporan Siswa (+ ekspor Excel/PDF), Laporan Guru, Analisis AI, dan Dashboard.
 Ditambah: Login, proteksi akses, sinkronisasi multi-perangkat, dan
 generate/cetak barcode baru untuk siswa.
 
+**Data siswa tersimpan permanen:** Sekali siswa masuk ke database (lewat impor Excel
+atau input manual), datanya tersimpan selamanya di cloud. Tahun ajaran berikutnya,
+admin cukup impor Excel berisi siswa BARU saja — siswa lama tidak akan hilang atau
+perlu dimasukkan ulang (import bersifat tambah/perbarui, bukan mengganti seluruh data).
+Ada juga tombol **"Unduh Template"** (dapat file Excel kosong dengan format kolom yang
+benar: NIS, Nama, Kelas, JK) dan **"Ekspor Data"** (backup seluruh data siswa saat ini
+ke Excel) di menu Database Siswa. Contoh template asli sekolah juga disertakan di
+folder `templates/`.
+
 **Kompatibilitas barcode lama:** Scanner mencocokkan hasil scan langsung
 dengan ID/NIS siswa di database (bukan format khusus). Barcode lama tetap
 terbaca selama ID siswa di database tidak diubah. Barcode baru yang dibuat
 lewat menu Database Siswa juga memakai ID siswa sebagai isinya, jadi otomatis
 kompatibel dengan scanner yang sama.
+
+---
+
+## Update: Mode Otomatis/Manual & Notifikasi Sekilas
+
+Menu **Scanner** sekarang punya 2 mode:
+- **Otomatis (jam)**: ibadah terdeteksi sendiri berdasarkan jadwal jam yang diatur admin (ikon ⚙ di pojok kanan atas halaman Scanner). Kalau jamnya tumpang tindih dengan ibadah lain (misal Dhuha & Upacara di jam yang sama), sistem akan minta pindah ke mode **Manual**.
+- **Manual**: operator memilih sendiri jenis ibadah — dipakai untuk kasus khusus (Senin: Upacara vs Dhuha, dsb).
+
+Notifikasi hasil scan sekarang muncul sebagai **pop-up sekilas** di bagian atas layar (hijau = berhasil, merah = gagal/tidak terdaftar, kuning = sudah absen sebelumnya), otomatis hilang setelah ±2.5 detik.
+
+⚠️ **Kalau project Supabase kamu dibuat SEBELUM update ini**, jalankan dulu file
+`supabase/migration-2-jadwal-otomatis.sql` di SQL Editor Supabase (caranya sama
+seperti menjalankan `schema.sql` di awal) supaya tabel jadwal ibadah tersedia.
+Kalau tabel ini belum ada, mode Otomatis tetap jalan pakai jadwal bawaan (default),
+tapi pengaturan lewat ikon ⚙ tidak akan tersimpan sampai migrasi dijalankan.
 
 ---
 

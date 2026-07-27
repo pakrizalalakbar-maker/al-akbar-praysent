@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Student } from '../types';
 import { StorageService } from '../services/storage';
-import { Users, Plus, Upload, Trash2, Pencil, Search, X, Loader2, QrCode, Printer, Download } from 'lucide-react';
+import { Users, Plus, Upload, Trash2, Pencil, Search, X, Loader2, QrCode, Printer, Download, FileDown } from 'lucide-react';
 
 interface StudentDatabaseProps {
   students: Student[];
@@ -76,6 +76,29 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
   };
 
   const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleDownloadTemplate = () => {
+    const rows = [
+      { NIS: 'MSL01', Nama: 'AHMAD DANISH DAVIN AL-KAMIL', Kelas: 'VII', JK: 'L' },
+      { NIS: 'MSL02', Nama: 'AIRA ROSMALIA', Kelas: 'VII', JK: 'P' },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    XLSX.writeFile(wb, 'template-data-siswa.xlsx');
+  };
+
+  const handleExportCurrent = () => {
+    if (students.length === 0) {
+      alert('Belum ada data siswa untuk diekspor.');
+      return;
+    }
+    const rows = students.map(s => ({ NIS: s.id, Nama: s.name, Kelas: s.class, JK: s.gender }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa');
+    XLSX.writeFile(wb, `data-siswa-${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -151,11 +174,23 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
         <div className="flex flex-wrap gap-2">
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
           <button
+            onClick={handleDownloadTemplate}
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            <FileDown size={16} /> Unduh Template
+          </button>
+          <button
             onClick={handleImportClick}
             disabled={busy}
             className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
           >
             <Upload size={16} /> Impor Excel
+          </button>
+          <button
+            onClick={handleExportCurrent}
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            <Download size={16} /> Ekspor Data
           </button>
           <button
             onClick={printBulkBarcodes}
