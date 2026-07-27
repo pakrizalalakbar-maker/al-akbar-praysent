@@ -53,6 +53,11 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
   const [zoomValue, setZoomValue] = useState<number | null>(null);
 
+  // Ref supaya callback yang sudah "dipegang" oleh kamera yang sedang berjalan
+  // selalu baca nilai TERBARU (bukan nilai lama saat "Mulai Scan" pertama kali ditekan).
+  const studentsRef = useRef<Student[]>(students);
+  const effectivePrayerRef = useRef<PrayerType | null>(null);
+
   // Muat jadwal dari database (kalau ada), jam berjalan tiap 15 detik
   useEffect(() => {
     StorageService.getPrayerSchedule()
@@ -72,6 +77,16 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
   const noScheduleMatch = activePrayers.length === 0;
 
   const effectivePrayer: PrayerType | null = mode === 'manual' ? manualPrayer : autoPrayer;
+
+  // Sinkronkan ref setiap kali nilai terkait berubah, supaya kamera yang sedang
+  // berjalan (started sebelumnya) tetap ikut aturan terbaru tanpa perlu restart.
+  useEffect(() => {
+    effectivePrayerRef.current = effectivePrayer;
+  }, [effectivePrayer]);
+
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
 
   const showToast = useCallback((t: NonNullable<ToastState>) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -97,7 +112,8 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
   const handleScanSuccess = useCallback(
     async (decodedText: string) => {
       if (processingRef.current) return;
-      if (!effectivePrayer) {
+      const currentPrayer = effectivePrayerRef.current;
+      if (!currentPrayer) {
         showToast({ type: 'error', message: 'Tidak ada jadwal ibadah aktif. Pilih mode Manual.' });
         return;
       }
@@ -105,7 +121,7 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
       setProcessing(true);
 
       const studentId = decodedText.trim();
-      const student = students.find(s => s.id === studentId);
+      const student = studentsRef.current.find(s => s.id === studentId);
 
       if (!student) {
         showToast({ type: 'error', message: `ID "${studentId}" tidak terdaftar di database siswa.` });
@@ -118,9 +134,9 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
       const dateStr = scanTime.toISOString().split('T')[0];
 
       try {
-        const already = await StorageService.hasRecordToday(student.id, effectivePrayer, dateStr);
+        const already = await StorageService.hasRecordToday(student.id, currentPrayer, dateStr);
         if (already) {
-          showToast({ type: 'duplicate', message: `${student.name} sudah tercatat hadir ${effectivePrayer} hari ini.` });
+          showToast({ type: 'duplicate', message: `${student.name} sudah tercatat hadir ${currentPrayer} hari ini.` });
         } else {
           const newRecord = await StorageService.addRecord({
             studentId: student.id,
@@ -128,10 +144,10 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
             studentClass: student.class,
             timestamp: scanTime.getTime(),
             dateStr,
-            prayer: effectivePrayer,
+            prayer: currentPrayer,
           });
           onRecordAdded(newRecord);
-          showToast({ type: 'success', message: `${student.name} (${student.class}) - ${effectivePrayer}` });
+          showToast({ type: 'success', message: `${student.name} (${student.class}) - ${currentPrayer}` });
         }
       } catch (err) {
         console.error(err);
@@ -143,7 +159,7 @@ export const Scanner: React.FC<ScannerProps> = ({ students, onRecordAdded }) => 
         processingRef.current = false;
       }, 2000);
     },
-    [students, effectivePrayer, onRecordAdded, showToast]
+    [onRecordAdded, showToast]
   );
 
   const startScanner = useCallback(async () => {
