@@ -41,7 +41,20 @@ seperti menjalankan `schema.sql` di awal) supaya tabel jadwal ibadah tersedia.
 Kalau tabel ini belum ada, mode Otomatis tetap jalan pakai jadwal bawaan (default),
 tapi pengaturan lewat ikon ⚙ tidak akan tersimpan sampai migrasi dijalankan.
 
-## Update: Sensitivitas Kamera & Pop-up Diperkecil
+## Update: Kelola Database & Cetak Barcode Lebih Fleksibel
+
+Menu **Database Siswa** sekarang punya:
+- **Centang per siswa** (atau "pilih semua" di header tabel) untuk memilih beberapa siswa sekaligus
+- **Filter Kelas** (dropdown) di samping kotak pencarian — bisa cari per kelas tertentu
+- **Hapus Terpilih** — hapus hanya siswa yang dicentang
+- **Cetak Barcode**: kalau ada yang dicentang → cetak yang dicentang saja; kalau tidak ada yang dicentang → cetak sesuai hasil filter kelas/pencarian yang sedang aktif. Jadi bisa cetak per kelas dengan cara pilih kelasnya di filter lalu klik cetak tanpa mencentang satupun.
+- **Zona Berbahaya → Hapus Semua Data** — hapus seluruh database siswa (dan otomatis seluruh riwayat presensinya ikut terhapus). Butuh ketik "HAPUS" untuk konfirmasi supaya tidak kepencet tidak sengaja.
+
+**Barcode & kartu lama:** Isi barcode selalu berupa ID/NIS siswa apa adanya. Selama ID siswa tidak diubah, generate ulang barcode kapan pun akan selalu menghasilkan kode yang identik dengan kartu fisik yang sudah pernah dicetak — jadi kartu lama (termasuk yang masa berlakunya masih 3 tahun) tetap terbaca scanner selamanya tanpa perlu tindakan tambahan.
+
+---
+
+## Update: Sensitivitas Kamera & Pop-up
 
 - Scanner sekarang pakai fitur deteksi barcode bawaan browser (kalau didukung) yang jauh lebih cepat & sensitif dibanding sebelumnya, plus kotak bidik diperbesar supaya lebih toleran terhadap jarak/sudut kamera.
 - Kalau perangkat mendukung, muncul **slider zoom** di bawah tampilan kamera — bisa dipakai untuk "mendekatkan" tampilan tanpa harus geser jarak fisik ke barcode.

@@ -1,9 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Student } from '../types';
 import { StorageService } from '../services/storage';
-import { Users, Plus, Upload, Trash2, Pencil, Search, X, Loader2, QrCode, Printer, Download, FileDown } from 'lucide-react';
+import {
+  Users, Plus, Upload, Trash2, Pencil, Search, X, Loader2,
+  QrCode, Printer, Download, FileDown, AlertTriangle, CheckSquare, Square,
+} from 'lucide-react';
 
 interface StudentDatabaseProps {
   students: Student[];
@@ -14,28 +17,64 @@ const emptyForm: Student = { id: '', name: '', class: '', gender: 'L' };
 
 export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setStudents }) => {
   const [search, setSearch] = useState('');
+  const [classFilter, setClassFilter] = useState('Semua');
   const [form, setForm] = useState<Student>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- pilih siswa (untuk hapus/cetak sebagian) ---
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   // --- state untuk generate/cetak barcode ---
   const [barcodeStudent, setBarcodeStudent] = useState<Student | null>(null);
-  const [bulkPrintOpen, setBulkPrintOpen] = useState(false);
+  const [bulkPrintList, setBulkPrintList] = useState<Student[] | null>(null);
   const singleCanvasWrapRef = useRef<HTMLDivElement>(null);
+
+  // --- state hapus semua (danger zone) ---
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
 
   const refresh = async () => {
     const fresh = await StorageService.getStudents();
     setStudents(fresh);
   };
 
+  const classes = useMemo(() => Array.from(new Set(students.map(s => s.class))).sort(), [students]);
+
   const filtered = students.filter(
     s =>
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.id.toLowerCase().includes(search.toLowerCase()) ||
-      s.class.toLowerCase().includes(search.toLowerCase())
+      (classFilter === 'Semua' || s.class === classFilter) &&
+      (s.name.toLowerCase().includes(search.toLowerCase()) ||
+        s.id.toLowerCase().includes(search.toLowerCase()) ||
+        s.class.toLowerCase().includes(search.toLowerCase()))
   );
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(s => selectedIds.has(s.id));
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filtered.forEach(s => next.delete(s.id));
+      } else {
+        filtered.forEach(s => next.add(s.id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
 
   const openAddForm = () => {
     setForm(emptyForm);
@@ -71,7 +110,43 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
     if (!confirm('Hapus siswa ini dari database?')) return;
     setBusy(true);
     await StorageService.deleteStudent(id);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     await refresh();
+    setBusy(false);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Hapus ${selectedIds.size} siswa terpilih dari database? Riwayat presensi mereka juga akan ikut terhapus.`)) return;
+    setBusy(true);
+    try {
+      await StorageService.deleteStudentsBulk(Array.from(selectedIds));
+      clearSelection();
+      await refresh();
+    } catch (err) {
+      alert('Gagal menghapus data terpilih.');
+      console.error(err);
+    }
+    setBusy(false);
+  };
+
+  const handleDeleteAll = async () => {
+    if (deleteAllConfirmText !== 'HAPUS') return;
+    setBusy(true);
+    try {
+      await StorageService.deleteAllStudents();
+      clearSelection();
+      await refresh();
+      setShowDeleteAll(false);
+      setDeleteAllConfirmText('');
+    } catch (err) {
+      alert('Gagal menghapus seluruh data.');
+      console.error(err);
+    }
     setBusy(false);
   };
 
@@ -137,9 +212,10 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
   };
 
   // --- BARCODE ---
-  // PENTING: konten barcode/QR SELALU berupa ID/NIS siswa apa adanya (sama seperti
-  // format barcode lama). Karena itu barcode lama tetap terbaca oleh Scanner,
-  // dan barcode baru yang dibuat di sini otomatis kompatibel juga.
+  // PENTING: konten barcode/QR SELALU berupa ID/NIS siswa apa adanya. Selama ID
+  // siswa tidak diubah, generate ulang barcode akan selalu menghasilkan isi yang
+  // SAMA PERSIS dengan kartu lama yang sudah dicetak — jadi kartu fisik lama
+  // (termasuk yang masa aktifnya masih berjalan) tetap terbaca oleh scanner.
   const downloadSingleBarcode = (student: Student) => {
     const canvas = singleCanvasWrapRef.current?.querySelector('canvas');
     if (!canvas) return;
@@ -151,14 +227,19 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
   };
 
   const printSingleBarcode = () => {
-    setBulkPrintOpen(false);
+    setBulkPrintList(null);
     window.print();
   };
 
-  const printBulkBarcodes = () => {
+  // Cetak barcode: kalau ada yang dicentang -> cetak yang dicentang saja.
+  // Kalau tidak ada yang dicentang -> cetak sesuai hasil filter (search/kelas) saat ini.
+  const printBarcodes = (list: Student[]) => {
+    if (list.length === 0) {
+      alert('Tidak ada siswa untuk dicetak barcode-nya.');
+      return;
+    }
     setBarcodeStudent(null);
-    setBulkPrintOpen(true);
-    // beri waktu render sebelum membuka dialog print
+    setBulkPrintList(list);
     setTimeout(() => window.print(), 150);
   };
 
@@ -193,11 +274,11 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
             <Download size={16} /> Ekspor Data
           </button>
           <button
-            onClick={printBulkBarcodes}
+            onClick={() => printBarcodes(selectedIds.size > 0 ? students.filter(s => selectedIds.has(s.id)) : filtered)}
             disabled={filtered.length === 0}
             className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
           >
-            <Printer size={16} /> Cetak Semua Barcode
+            <Printer size={16} /> {selectedIds.size > 0 ? `Cetak Terpilih (${selectedIds.size})` : 'Cetak Barcode (sesuai filter)'}
           </button>
           <button
             onClick={openAddForm}
@@ -208,20 +289,56 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
         </div>
       </header>
 
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Cari nama, ID, atau kelas..."
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Cari nama atau ID..."
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+        <select
+          value={classFilter}
+          onChange={e => setClassFilter(e.target.value)}
+          className="px-3 py-2 border border-gray-200 rounded-lg text-sm sm:w-48"
+        >
+          <option value="Semua">Semua Kelas</option>
+          {classes.map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
       </div>
+
+      {/* Bar aksi massal - muncul kalau ada yang dicentang */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-sm">
+          <span className="text-emerald-800 font-medium">{selectedIds.size} siswa dipilih</span>
+          <div className="flex gap-2">
+            <button onClick={clearSelection} className="px-3 py-1.5 text-gray-600 hover:text-gray-800 font-medium">
+              Batal
+            </button>
+            <button
+              onClick={handleDeleteSelected}
+              disabled={busy}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50"
+            >
+              <Trash2 size={14} /> Hapus Terpilih
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-left">
             <tr>
+              <th className="px-4 py-3 w-8">
+                <button onClick={toggleSelectAllFiltered} className="text-gray-400 hover:text-emerald-600">
+                  {allFilteredSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                </button>
+              </th>
               <th className="px-4 py-3 font-medium">ID</th>
               <th className="px-4 py-3 font-medium">Nama</th>
               <th className="px-4 py-3 font-medium">Kelas</th>
@@ -231,7 +348,12 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(s => (
-              <tr key={s.id} className="hover:bg-gray-50">
+              <tr key={s.id} className={`hover:bg-gray-50 ${selectedIds.has(s.id) ? 'bg-emerald-50/50' : ''}`}>
+                <td className="px-4 py-3">
+                  <button onClick={() => toggleSelect(s.id)} className="text-gray-400 hover:text-emerald-600">
+                    {selectedIds.has(s.id) ? <CheckSquare size={16} className="text-emerald-600" /> : <Square size={16} />}
+                  </button>
+                </td>
                 <td className="px-4 py-3 font-mono text-xs text-gray-600">{s.id}</td>
                 <td className="px-4 py-3 font-medium text-gray-800">{s.name}</td>
                 <td className="px-4 py-3 text-gray-600">{s.class}</td>
@@ -257,13 +379,30 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                   Belum ada data siswa.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Zona berbahaya: hapus semua data */}
+      <div className="border border-red-100 bg-red-50/50 rounded-xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <AlertTriangle size={18} className="text-red-500 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-800">Zona Berbahaya</p>
+            <p className="text-xs text-red-600">Hapus SELURUH data siswa & riwayat presensinya. Tidak bisa dibatalkan.</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setShowDeleteAll(true)}
+          className="shrink-0 flex items-center gap-2 bg-white border border-red-300 text-red-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-50"
+        >
+          Hapus Semua Data
+        </button>
       </div>
 
       {/* Modal tambah/edit siswa */}
@@ -330,6 +469,48 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
         </div>
       )}
 
+      {/* Modal hapus semua data (konfirmasi ketik "HAPUS") */}
+      {showDeleteAll && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 relative">
+            <button
+              onClick={() => {
+                setShowDeleteAll(false);
+                setDeleteAllConfirmText('');
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-2 text-red-600 mb-2">
+              <AlertTriangle size={20} />
+              <h2 className="text-lg font-bold">Hapus Semua Data?</h2>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Ini akan menghapus <b>seluruh {students.length} data siswa</b> beserta <b>semua riwayat presensi</b> mereka
+              secara permanen. Tindakan ini <b>tidak bisa dibatalkan</b>.
+            </p>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Ketik <span className="font-mono font-bold">HAPUS</span> untuk konfirmasi:
+            </label>
+            <input
+              value={deleteAllConfirmText}
+              onChange={e => setDeleteAllConfirmText(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4"
+              placeholder="HAPUS"
+            />
+            <button
+              onClick={handleDeleteAll}
+              disabled={deleteAllConfirmText !== 'HAPUS' || busy}
+              className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {busy && <Loader2 size={16} className="animate-spin" />}
+              Ya, Hapus Semua Data
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Modal barcode satu siswa */}
       {barcodeStudent && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
@@ -341,7 +522,7 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
               <X size={18} />
             </button>
             <h2 className="text-base font-bold text-gray-800 mb-1">Barcode Siswa</h2>
-            <p className="text-xs text-gray-400 mb-4">Kode ini berisi ID/NIS siswa — kompatibel dengan scanner.</p>
+            <p className="text-xs text-gray-400 mb-4">Kode ini berisi ID/NIS siswa — sama persis dengan kartu lama bila ID tidak diubah.</p>
 
             <div ref={singleCanvasWrapRef} className="flex justify-center mb-3">
               <QRCodeCanvas value={barcodeStudent.id} size={180} level="M" includeMargin />
@@ -376,10 +557,10 @@ export const StudentDatabase: React.FC<StudentDatabaseProps> = ({ students, setS
         </div>
       )}
 
-      {/* Area cetak massal (disembunyikan di layar, muncul saat print) */}
-      {bulkPrintOpen && (
+      {/* Area cetak massal / terpilih / per kelas (disembunyikan di layar, muncul saat print) */}
+      {bulkPrintList && (
         <div id="printable-barcodes" className="grid grid-cols-3 gap-4 p-4">
-          {filtered.map(s => (
+          {bulkPrintList.map(s => (
             <div key={s.id} className="flex flex-col items-center border border-gray-200 rounded-lg p-3 break-inside-avoid">
               <QRCodeCanvas value={s.id} size={110} level="M" includeMargin />
               <p className="font-semibold text-xs mt-2 text-center">{s.name}</p>

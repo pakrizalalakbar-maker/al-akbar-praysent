@@ -59,6 +59,19 @@ export const StorageService = {
     if (error) throw error;
   },
 
+  async deleteStudentsBulk(studentIds: string[]): Promise<void> {
+    if (studentIds.length === 0) return;
+    const { error } = await supabase.from('students').delete().in('id', studentIds);
+    if (error) throw error;
+  },
+
+  // Hapus SEMUA data siswa (otomatis ikut menghapus semua riwayat presensi
+  // terkait, karena ada relasi cascade delete di database).
+  async deleteAllStudents(): Promise<void> {
+    const { error } = await supabase.from('students').delete().neq('id', '');
+    if (error) throw error;
+  },
+
   // ---------- ATTENDANCE RECORDS ----------
   async getRecords(): Promise<AttendanceRecord[]> {
     const { data, error } = await supabase
